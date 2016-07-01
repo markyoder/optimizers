@@ -65,6 +65,8 @@ def calc_roc_mpp(Z_fc, Z_ev, n_cpu=None, f_denom=None, h_denom=None):
 # well... this won't compile either. list inputs maybe? we probalby just need to code these up as extensions... maybe cython...
 #@numba.guvectorize([(numba.float64[:], numba.float64[:], numba.float64[:], numba.float64, numba.float64, numba.int64, numba.int64, numba.boolean)], '(n),(n)->(n)')
 def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1):
+	# TODO: make this right. this is the right structure, i think, but the logic is off. basically, we should be able to load "events" with the last few
+	# values of _fc (highest values) and get something the bumps up at the early part of the dist.
 	# start with a crayon simple 1D ROC.
 	#@do_sort: do/don't do the sort. always do the sort unless you're really sure the data are already sorted,
 	# like because you did it in an mpp handler or something.
@@ -84,6 +86,7 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 		Z_ev.sort()
 	n_eq=float(len(Z_ev))
 	#n_fc=float(len(Z_fc))
+
 	#
 	k_eq = 0
 	for j,z_fc in enumerate(Z_fc):	
@@ -97,8 +100,8 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 				#print('ev: ', k_eq, Z_ev[k_eq], z_fc)
 				k_eq+=1
 			#
-			#FH += [[(j+1 + j_fc0)/f_denom, (k_eq + j_eq0 )/h_denom]]
-			FH += [[(f_denom - (j + j_fc0))/f_denom, (n_eq-(k_eq+j_eq0))/h_denom 
+			FH += [[(j+1 + j_fc0)/f_denom, (k_eq + j_eq0 )/h_denom]]
+			#FH += [[(f_denom - (j + j_fc0))/f_denom, (k_eq+j_eq0)/h_denom ]]
 		#
 	# and one more at the end, just to square off the curve?:
 	#FH += [[1.,1.]]
@@ -108,10 +111,15 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 	
 
 def roc_test(fignum=1, n_cpu=None):
+	# ... so this still isn't quite right.
 	n_cpu = (n_cpu or mpp.cpu_count() )
-	Z_fc = list(range(10,35))
-	Z_eq = list(range(5,25,5))
-	Z_eq +=[7,7,7, 20,21,22]
+	#Z_fc = list(range(10,35))
+	#Z_eq = list(range(5,25,5))
+	Z_fc = list(range(1,26))
+	#Z_eq = list(range(20,26))
+	Z_eq = [25,25,25,25]
+	
+	#Z_eq +=[7,7,7, 20,21,22]
 	#Z_eq.sort()
 	#Z_fc.sort()
 	#
