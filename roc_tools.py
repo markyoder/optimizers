@@ -31,6 +31,11 @@ def calc_roc_mpp(Z_fc, Z_ev, n_cpu=None, f_denom=None, h_denom=None):
 	# or x[0][1]==x[1][1], remove the later one). we get these elements because one sub-process will find the "hit" at a different z_fc than another process.
 	#
 	n_cpu = (n_cpu or mpp.cpu_count())
+	#
+	# there should probably be recipricol "if" hadling in calc_roc() (aka, allow an n_cpu input which diverts here).
+	if n_cpu==1:
+		return calc_roc(Z_fc, Z_ev, f_denom=f_denom, h_denom=h_denom)
+	#
 	f_denom = float(f_denom or len(Z_fc))
 	h_denom = float(h_denom or len(Z_ev))
 	#
@@ -59,13 +64,15 @@ def calc_roc_mpp(Z_fc, Z_ev, n_cpu=None, f_denom=None, h_denom=None):
 	
 # well... this won't compile either. list inputs maybe? we probalby just need to code these up as extensions... maybe cython...
 #@numba.guvectorize([(numba.float64[:], numba.float64[:], numba.float64[:], numba.float64, numba.float64, numba.int64, numba.int64, numba.boolean)], '(n),(n)->(n)')
-def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True):
+def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1):
 	# start with a crayon simple 1D ROC.
 	#@do_sort: do/don't do the sort. always do the sort unless you're really sure the data are already sorted,
 	# like because you did it in an mpp handler or something.
 	# j_fc/eq0: starting indices, aka if the job's been parsed up by an mpp handler.
 	#
 	# maybe make copies? or leave that to the calling function?
+	if n_cpu > 1:
+		return calc_roc_mpp(Z_fc, Z_ev, n_cpu=n_cpu, f_denom=f_denom, h_denom=h_denom)
 	#
 	#
 	f_denom = float(f_denom or len(Z_fc)+1)
@@ -125,14 +132,46 @@ def roc_test(fignum=1, n_cpu=None):
 		ax1=fg.add_axes([.1,.1,.4,.8])
 		ax2=fg.add_axes([.55,.1,.4,.8])
 		#
-		ax1.plot(*zip(*[[j,k] for j,k in FH]), '-', marker='o')
+		ax1.plot(*zip(*[[j,k] for j,k in FH]), '-', marker='o', label='spp')
 		ax1.plot(range(2), range(2), ls='-', color='r', lw=2.)
 		
-		ax1.plot(*zip(*[[j+.0001,k] for j,k in FH_mpp]), '-', marker='o')
-		ax2.plot(*zip(*[[j,k] for j,k in FH_mpp]), '-', marker='o')
+		ax1.plot(*zip(*[[j+.01,k] for j,k in FH_mpp]), '-', marker='o', label='mpp (shifted)')
+		ax2.plot(*zip(*[[j,k] for j,k in FH_mpp]), '-', marker='o', label='mpp')
 		ax2.plot(range(2), range(2), ls='-', color='r', lw=2.)
+		#
+		plt.suptitle('ROC spp and mpp comparison', size=14)
+		ax1.set_title('ROC_spp', size=14)
+		ax2.set_title('ROC_mpp', size=14)
+		for ax in (ax1,ax2):
+			ax.legend(loc=0, numpoints=1)
+		#
 	#
 	return FH
+
+def roc_test_fig(N_ev=1000, N_fc=10000, fignum=0, do_clf=True, n_cpu=1):
+	N_ev=int(N_ev)
+	N_fc=int(N_fc)
+	R1=random.Random()
+	R2=random.Random()
+	#
+	Z_fc = [R1.random() for _ in range(N_fc)]
+	Z_ev = [R2.random() for _ in range(N_ev)]
+	#
+	# we can actulaly let calc_roc_mpp() or maybe calc_roc() handle this now... if we want.
+	FH = calc_roc(Z_fc=Z_fc, Z_ev=Z_ev, n_cpu=n_cpu)
+	#if n_cpu==1:
+	#	FH = calc_roc(Z_fc=Z_fc, Z_ev=Z_ev)
+	#else:
+	#	FH = calc_roc_mpp(Z_fc=Z_fc, Z_ev=Z_ev, n_cpu=n_cpu)
+	#
+	plt.figure(fignum)
+	if do_clf:
+		plt.clf()
+		plt.plot(range(2), range(2), ls='-', lw=2., color='r')
+	plt.plot(*zip(*FH), marker='.')
+	
+	return FH
+	#
 
 def roc_bench(N=1e5):
 	N=int(N)
