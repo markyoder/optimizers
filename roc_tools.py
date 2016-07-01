@@ -75,8 +75,8 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 		return calc_roc_mpp(Z_fc, Z_ev, n_cpu=n_cpu, f_denom=f_denom, h_denom=h_denom)
 	#
 	#
-	f_denom = float(f_denom or len(Z_fc)+1)
-	h_denom = float(h_denom or len(Z_ev)+1)
+	f_denom = float(f_denom or len(Z_fc))
+	h_denom = float(h_denom or len(Z_ev))
 	#	
 	FH=[[0., 0.]]
 	if do_sort:
@@ -97,9 +97,10 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 				#print('ev: ', k_eq, Z_ev[k_eq], z_fc)
 				k_eq+=1
 			#
-			FH += [[(j+1 + j_fc0)/f_denom, (k_eq + j_eq0 )/h_denom]]
+			#FH += [[(j+1 + j_fc0)/f_denom, (k_eq + j_eq0 )/h_denom]]
+			FH += [[(f_denom - (j + j_fc0))/f_denom, (n_eq-(k_eq+j_eq0))/h_denom 
 		#
-	# and one more at the end, just to square off the curve:
+	# and one more at the end, just to square off the curve?:
 	#FH += [[1.,1.]]
 	#
 	#return [[0 for _ in FH[0]]] + FH
@@ -179,7 +180,9 @@ def roc_bench(N=1e5):
 	R2=random.Random()
 	#
 	Z_fc = [R1.random() for _ in range(N)]
-	Z_eq = [R2.random() for _ in range(N)]
+	Z_eq = [R2.random() for _ in range(int(.1*N))]
+	#
+	print('bench for spp and mpp.')
 	#
 	# first make sure roc is compiled:
 	FH=calc_roc(list(range(5)), list(range(5)))
@@ -187,6 +190,12 @@ def roc_bench(N=1e5):
 	t0 = time.time()
 	for k in range(100):
 		FH = calc_roc(Z_fc, Z_eq)
+	#
+	print('dt_2: ', time.time()-t0)
+	#
+	t0 = time.time()
+	for k in range(100):
+		FH = calc_roc_mpp(Z_fc, Z_eq)
 	#
 	print('dt: ', time.time()-t0)
 
