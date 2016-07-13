@@ -108,7 +108,34 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 	#
 	#return [[0 for _ in FH[0]]] + FH
 	return FH
+
+
+def roc_test_spp1(fignum=1):
+	#
+	# code up an explicit ROC input and output.
+	# keep it small and simple, with just enough twists to be rigorous.
+	# assume sparse approximations, so no two events with the same value.
+	Z_fc = list(range(10,35))
+	Z_eq = [10., 20., 25, 27, 30, 32, 33, 34]
+	#
+	# work out the proper shift; this is a > vs >= type thing.
+	#F = [17,16,15,14,13,12,11,10, 9,8,8,7,6,5,4,4,3,3,2,1,1,0,0,0,0]
+	F = [17,17,16,15,14,13,12,11,10,9,8,8,7,6,5,4,4,3,3,2,1,1,0,0,0]   # inclusive: it's a falsie if z>=z0 and empty.  (this is probably correct)
+	H = [8,7,7,7,7,7,7,7,7,7,7,6,6,6,6,6,5,5,4,4,4,3,3,2,1]
+	#
+	n_ev = max(H)
+	n_fc = max(F)
+	n_ev=1
+	n_fc=1
+	#
+	plt.figure(fignum)
+	plt.clf()
 	
+	plt.plot(numpy.array(F)/n_fc, numpy.array(H)/n_ev, '.-')
+	plt.plot(range(2), range(2), 'r-', lw=2)
+	
+	#
+	print('lens: ', len(F), len(H))	
 
 def roc_test(fignum=1, n_cpu=None):
 	# ... so this still isn't quite right.
