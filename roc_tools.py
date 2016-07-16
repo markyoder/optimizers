@@ -25,7 +25,7 @@ import multiprocessing as mpp
 import numba
 #
 # for unit testing:
-default_roc_sample = {'F': [17,17,16,15,14,13,12,11,10,9,8,8,7,6,5,4,4,3,3,2,1,1,0,0,0], 'H':[8,7,7,7,7,7,7,7,7,7,7,6,6,6,6,6,5,5,4,4,4,3,3,2,1], 'Z_fc':list(range(10,35)), 'Z_eq':[10., 20., 25, 27, 30, 32, 33, 34]}
+default_roc_sample = {'F': [17,17,16,15,14,13,12,11,10,9,8,8,7,6,5,4,4,3,3,2,1,1,0,0,0], 'H':[8,7,7,7,7,7,7,7,7,7,7,6,6,6,6,6,5,5,4,4,4,3,3,2,1], 'Z_fc':list(range(10,35)), 'Z_ev':[10., 20., 25, 27, 30, 32, 33, 34]}
 
 #
 def calc_roc_mpp(Z_fc, Z_ev, n_cpu=None, f_denom=None, h_denom=None):
@@ -119,14 +119,14 @@ def roc_test_spp1(fignum=1):
 	# keep it small and simple, with just enough twists to be rigorous.
 	# assume sparse approximations, so no two events with the same value.
 	#Z_fc = list(range(10,35))
-	#Z_eq = [10., 20., 25, 27, 30, 32, 33, 34]
+	#Z_ev = [10., 20., 25, 27, 30, 32, 33, 34]
 	#
 	# work out the proper shift; this is a > vs >= type thing.
 	#F = [17,16,15,14,13,12,11,10, 9,8,8,7,6,5,4,4,3,3,2,1,1,0,0,0,0]
 	#F = [17,17,16,15,14,13,12,11,10,9,8,8,7,6,5,4,4,3,3,2,1,1,0,0,0]   # inclusive: it's a falsie if z>=z0 and empty.  (this is probably correct)
 	#H = [8,7,7,7,7,7,7,7,7,7,7,6,6,6,6,6,5,5,4,4,4,3,3,2,1]
 	#
-	Z_fc, Z_eq, F,H = (default_roc_sample[x] for x in ('Z_fc', 'Z_eq', 'F','H'))
+	Z_fc, Z_ev, F,H = (default_roc_sample[x] for x in ('Z_fc', 'Z_ev', 'F','H'))
 	#
 	n_ev = max(H)
 	n_fc = max(F)
@@ -148,25 +148,25 @@ def roc_test(fignum=1, n_cpu=None):
 	# ... so this still isn't quite right.
 	n_cpu = (n_cpu or mpp.cpu_count() )
 	#Z_fc = list(range(10,35))
-	#Z_eq = list(range(5,25,5))
+	#Z_ev = list(range(5,25,5))
 	Z_fc = list(range(1,26))
-	#Z_eq = list(range(20,26))
-	Z_eq = [25,25,25,25]
+	#Z_ev = list(range(20,26))
+	Z_ev = [25,25,25,25]
 	
-	#Z_eq +=[7,7,7, 20,21,22]
-	#Z_eq.sort()
+	#Z_ev +=[7,7,7, 20,21,22]
+	#Z_ev.sort()
 	#Z_fc.sort()
 	#
 	print('Z_fc: ', Z_fc)
-	print('Z_eq: ', Z_eq)
+	print('Z_ev: ', Z_ev)
 	#
-	h_denom=len(Z_eq)
+	h_denom=len(Z_ev)
 	f_denom=len(Z_fc)
 	#
-	FH_mpp = calc_roc_mpp(Z_fc, Z_eq, h_denom=h_denom, f_denom=f_denom)
-	FH = calc_roc(Z_fc, Z_eq, h_denom=h_denom, f_denom=f_denom)
-	#FH_mpp = calc_roc_mpp(Z_fc, Z_eq, h_denom=1, f_denom=1)
-	#FH = calc_roc(Z_fc, Z_eq, h_denom=1, f_denom=1)
+	FH_mpp = calc_roc_mpp(Z_fc, Z_ev, h_denom=h_denom, f_denom=f_denom)
+	FH = calc_roc(Z_fc, Z_ev, h_denom=h_denom, f_denom=f_denom)
+	#FH_mpp = calc_roc_mpp(Z_fc, Z_ev, h_denom=1, f_denom=1)
+	#FH = calc_roc(Z_fc, Z_ev, h_denom=1, f_denom=1)
 	#print('FH: ', FH)
 	#
 	if fignum is not None:
@@ -212,7 +212,7 @@ def roc_test_fig(N_ev=1000, N_fc=10000, fignum=0, do_clf=True, n_cpu=1):
 		plt.clf()
 		plt.plot(range(2), range(2), ls='-', lw=2., color='r')
 	plt.plot(*zip(*FH), marker='.')
-	
+	#
 	return FH
 	#
 
@@ -222,7 +222,7 @@ def roc_bench(N=1e5):
 	R2=random.Random()
 	#
 	Z_fc = [R1.random() for _ in range(N)]
-	Z_eq = [R2.random() for _ in range(int(.1*N))]
+	Z_ev = [R2.random() for _ in range(int(.1*N))]
 	#
 	print('bench for spp and mpp.')
 	#
@@ -231,13 +231,13 @@ def roc_bench(N=1e5):
 	#
 	t0 = time.time()
 	for k in range(100):
-		FH = calc_roc(Z_fc, Z_eq)
+		FH = calc_roc(Z_fc, Z_ev)
 	#
 	print('dt_2: ', time.time()-t0)
 	#
 	t0 = time.time()
 	for k in range(100):
-		FH = calc_roc_mpp(Z_fc, Z_eq)
+		FH = calc_roc_mpp(Z_fc, Z_ev)
 	#
 	print('dt: ', time.time()-t0)
 
