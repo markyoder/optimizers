@@ -67,6 +67,8 @@ def calc_roc_mpp(Z_fc, Z_ev, n_cpu=None, f_denom=None, h_denom=None):
 	return roc
 
 def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1):
+	# (we should figure out how to compile these with numba)l.\
+	#
 	# let's take an iterative approach, and also accomodate cases where multiple events occur in a single bin... sometimes.
 	# this reqires that we think of Z_ev not as "the z-values for events," but "the z-values for cells that have events, and we want to know
 	# how many events.", so Z_ev --> [[j,z,n], ...] where j-> index (which we don't really need), z-> value, n-> number of events).
@@ -89,17 +91,7 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 	
 	N_fc = len(Z_fc)
 	N_ev = len(Z_ev)
-	
 	#
-	#Z_events = [(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev]
-	#Z_events.sort(key=lambda rw: rw[0])
-	#Z_events.reverse()
-	#
-	#Z_forecast = Z_fc		# we might end up making a copy of this (or something).
-	#Z_forecast = reversed(sorted(Z_fc))
-	#
-	#k_ev = 0
-	#k_fc = 0
 	k_fc_max = len(Z_fc)
 	k_ev, (z_ev, n_ev) = it_ev.__next__()		# eventually trap for the case with no events.
 	
@@ -116,7 +108,7 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 				H += n_ev
 				#H+=Z_events[k_ev][1]
 				#k_ev+=1
-				print('** ', z_ev, z_fc, k_ev)
+				#print('** ', z_ev, z_fc, k_ev)
 				#print('advancing events..', k_ev, z_ev)
 				if k_ev==N_ev-1:
 					k_ev+=1
@@ -143,11 +135,138 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 		rw[1]/=h_denom
 	
 	return FH
+
+def calc_roc_compressed(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1):
+	# A minor variaiton on calc_roc() with compression, aka: we exclude intermediate points in segments.
+	# the loop-exits are probably still a bit sloppy. unfortunately, i don't think there is an elegant way to exit an iterator; you have to either
+	# count rows or trap an exception.
+	#
+	# first, force Z_ev to be an array of arrays; if len=1
+	F,H = 0,0
+	FH = [[F,H]]
+	# we can do this more efficiently with an iterator...
+	#
+	# get an iterator for the events data:
+	it_ev =enumerate(reversed(sorted([(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev], key=lambda rw: rw[0])))
 	
+	N_fc = len(Z_fc)
+	N_ev = len(Z_ev)
+	#
+	k_fc_max = len(Z_fc)
+	k_ev, (z_ev, n_ev) = it_ev.__next__()		# eventually trap for the case with no events.
 	
-
-
-
+	   
+	# explicitly declare the iterator so we can manipulate it directly:
+	it_fc = enumerate(reversed(sorted(Z_fc)))
+	k_fc,z_fc = it_fc.__next__()
+	#for k_fc,z_fc in it_fc:
+	while k_fc<N_fc:
+		#
+		if k_ev<N_ev and z_ev>=z_fc:
+			#while k_ev<len(Z_events) and Z_events[k_ev][0]>=z_fc:
+			while k_ev<len(Z_ev) and z_ev>=z_fc:
+				H += n_ev
+				if k_ev==N_ev-1:
+					k_ev+=1
+					break
+				k_ev, (z_ev, n_ev) = it_ev.__next__()
+			#
+			if k_ev<N_ev:
+				k_fc,z_fc = it_fc.__next__()
+			else:
+				k_fc+=1
+		else:
+			while k_fc<N_fc and z_ev<z_fc:
+				F+=1
+				if k_fc == N_fc-1:
+					k_fc+=1
+					break
+				k_fc,z_fc = it_fc.__next__()
+		FH += [[F,H]]
+	#
+	f_denom = (f_denom or max([rw[0] for rw in FH]))
+	h_denom = (h_denom or max([rw[1] for rw in FH]))
+	for rw in FH:
+		rw[0]/=f_denom
+		rw[1]/=h_denom
+	
+	return FH
+#
+# eventually, we'll want to fold this (and other bits) into some sort of ROC class, i think, but for now it's procedural...
+class ROC_data_handler(object):
+	def __init__(self, fc_xyz, events_xyz=None, dx=None, dy=None, fignum=0, do_clf=True, z_event_min=None):
+		#
+		# get roc Z_fc, Z_ev from an xyz format forecast and test-catalog object.
+		# for now, assume lattice sites are center-binned.
+		# ... and eventually break this up
+		# ... be careful with variable declaration, so we can (maybe) just load all the locals() into self.__dict__
+		#
+		if isinstance(fc_xyz, str):
+			# if we're given a filename...
+			with open(fc_xyz, 'r') as froc:
+				fc_xyz= [[float(x) for x in rw.split()] for rw in froc if rw[0] not in('#', ' ', '\t', '\n')]
+		if isinstance(events_xyz, str):
+			# we're given a filename. load it ip:
+			with open(events_xyz,'r') as fev:
+				events_xyz = [[float(x) for x in rw.split()] for rw in fev if rw[0] not in('#', ' ', '\t', '\n')]
+		#
+		if not hasattr(fc_xyz, 'dtype'):
+			fc_xyz = numpy.core.records.fromarrays(zip(*fc_xyz), names=('x','y','z'), formats=['>f8', '>f8', '>f8'])
+		if not hasattr(events_xyz, 'dtype'):
+			events_xyz = numpy.core.records.fromarrays(zip(*events_xyz), names=('x','y','z'), formats=['>f8', '>f8', '>f8'])
+		z_event_min = (z_event_min or min(events_xyz['z']))
+		#
+		y_range = [min(fc_xyz['y']), max(fc_xyz['y'])]
+		x_range = [min(fc_xyz['x']), max(fc_xyz['x'])]
+		#
+		X_set = sorted(list(set(fc_xyz['x'])))
+		Y_set = sorted(list(set(fc_xyz['y'])))
+		d_x = (dx or abs(X_set[1] - X_set[0]))
+		d_y = (dy or abs(Y_set[1] - Y_set[0]))
+		#
+		nx = len(X_set)
+		ny = len(Y_set)
+		#print('nx,ny: ', nx, ny)
+		#
+		self.__dict__.update({key:val for key,val in locals().items() if not key in ('rw', 'x','y','z','fc_index', 'self')})
+		#
+		# ... so eventually wite this up as a class object...
+		# note the center-binning default (x - (lon_0-bin_width)), ...
+		#get_site = lambda x,y: int(round((x-lons[0]+.5*d_lon)/d_lon)) + int(round((y-lats[0]+.5*d_lat)/d_lat))*nx
+		#
+		# now, get the event z-values. what we really want is sites with events (and their z-values), so we need to keep track of the bin index of that site
+		# and the number of events in that bin.
+		z_events = {}
+		for x,y,z in events_xyz:
+			if z<z_event_min: continue
+			# is this event in bounds?
+			if x>self.x_max or x<self.x_min or y>self.y_max or y<self.y_min: continue
+			#
+			fc_index = self.get_site_index(x,y)
+			if not fc_index in z_events.keys(): z_events[fc_index]=[fc_xyz[fc_index][2],0]
+			z_events[fc_index][1] +=1
+		self.z_events = z_events
+		#
+	def get_site_index(self,x,y):
+		#return int(round((x-self.x_range[0]+.5*self.d_x)/self.d_x)) + int(round((y-self.y_range[0]+.5*self.d_y)/self.d_y))*self.nx
+		#print('*** ', x, y, int((x-self.x_range[0]+.5*self.d_x)/self.d_x) + int((y-self.y_range[0]+.5*self.d_y)/self.d_y)*int(self.nx))
+		return int((x-self.x_range[0]+.5*self.d_x)/self.d_x) + int((y-self.y_range[0]+.5*self.d_y)/self.d_y)*int(self.nx)
+	#
+	# some convenience functions
+	@property
+	def x_min(self):
+		return self.x_range[0] - .5*self.d_x
+	@property
+	def x_max(self):
+		return self.x_range[1] + .5*self.d_x
+	@property
+	def y_min(self):
+		return self.y_range[0] - .5*self.d_y
+	@property
+	def y_max(self):
+		return self.y_range[1] + .5*self.d_y
+	
+#
 def roc_test_spp1(fignum=1):
 	#
 	# code up an explicit ROC input and output.
