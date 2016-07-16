@@ -65,9 +65,32 @@ def calc_roc_mpp(Z_fc, Z_ev, n_cpu=None, f_denom=None, h_denom=None):
 	roc.sort(key = lambda rw: rw[0])
 	
 	return roc
+
+def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1):
+	# let's take an iterative approach, and also accomodate cases where multiple events occur in a single bin... sometimes.
+	# this reqires that we think of Z_ev not as "the z-values for events," but "the z-values for cells that have events, and we want to know
+	# how many events.", so Z_ev --> [[j,z,n], ...] where j-> index (which we don't really need), z-> value, n-> number of events).
+	# for now, ignore the index? we could keep the index, and then we can explicitly check it against the forecast values and not increment F
+	# if j1=j2... which in general may be another way to do this... but more on that later.
+	# if n is omitted, we assume n=1.
+	#
+	# also, as a general approach, let's start with (F,H) = (0,0) (aka, highest values) and increment backwards. for each step, H,F can move either
+	# up (H+=1) or to the right (F+=1). in other words, for each new exposed site, we either have a hit or a miss (false alarm).
+	#
+	# first, force Z_ev to be an array of arrays; if len=1
+	#Z_events = [(numpy.append(numpy.atleast_1d(x), [1])[0:2] for x in Z_ev]
+	Z_events = [numpy.append(numpy.atleast_1d(x) for x in Z_ev]
+	Z_events = Z_ev
+	print(Z_ev)
+	#
+	return Z_events
 	
+	
+
+
 # well... this won't compile either. list inputs maybe? we probalby just need to code these up as extensions... maybe cython...
 #@numba.guvectorize([(numba.float64[:], numba.float64[:], numba.float64[:], numba.float64, numba.float64, numba.int64, numba.int64, numba.boolean)], '(n),(n)->(n)')
+'''
 def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1):
 	# TODO: make this right. this is the right structure, i think, but the logic is off. basically, we should be able to load "events" with the last few
 	# values of _fc (highest values) and get something the bumps up at the early part of the dist.
@@ -112,7 +135,7 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 	#
 	#return [[0 for _ in FH[0]]] + FH
 	return FH
-
+'''
 def roc_test_spp1(fignum=1):
 	#
 	# code up an explicit ROC input and output.
