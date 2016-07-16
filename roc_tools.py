@@ -76,66 +76,78 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 	#
 	# also, as a general approach, let's start with (F,H) = (0,0) (aka, highest values) and increment backwards. for each step, H,F can move either
 	# up (H+=1) or to the right (F+=1). in other words, for each new exposed site, we either have a hit or a miss (false alarm).
+	
 	#
 	# first, force Z_ev to be an array of arrays; if len=1
-	#Z_events = [(numpy.append(numpy.atleast_1d(x), [1])[0:2] for x in Z_ev]
-	Z_events = [numpy.append(numpy.atleast_1d(x) for x in Z_ev]
-	Z_events = Z_ev
-	print(Z_ev)
-	#
-	return Z_events
+	F,H = 0,0
+	FH = [[F,H]]
+	# we can do this more efficiently with an iterator...
 	
+	#it_ev =enumerate(reversed(sorted([(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev], key=lambda rw: rw[0])))
+	#for rw in it_ev: print(rw)
+	it_ev =enumerate(reversed(sorted([(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev], key=lambda rw: rw[0])))
+	
+	N_fc = len(Z_fc)
+	N_ev = len(Z_ev)
+	
+	#
+	#Z_events = [(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev]
+	#Z_events.sort(key=lambda rw: rw[0])
+	#Z_events.reverse()
+	#
+	#Z_forecast = Z_fc		# we might end up making a copy of this (or something).
+	#Z_forecast = reversed(sorted(Z_fc))
+	#
+	#k_ev = 0
+	#k_fc = 0
+	k_fc_max = len(Z_fc)
+	k_ev, (z_ev, n_ev) = it_ev.__next__()		# eventually trap for the case with no events.
 	
 
-
-# well... this won't compile either. list inputs maybe? we probalby just need to code these up as extensions... maybe cython...
-#@numba.guvectorize([(numba.float64[:], numba.float64[:], numba.float64[:], numba.float64, numba.float64, numba.int64, numba.int64, numba.boolean)], '(n),(n)->(n)')
-'''
-def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1):
-	# TODO: make this right. this is the right structure, i think, but the logic is off. basically, we should be able to load "events" with the last few
-	# values of _fc (highest values) and get something the bumps up at the early part of the dist.
-	# start with a crayon simple 1D ROC.
-	#@do_sort: do/don't do the sort. always do the sort unless you're really sure the data are already sorted,
-	# like because you did it in an mpp handler or something.
-	# j_fc/eq0: starting indices, aka if the job's been parsed up by an mpp handler.
-	#
-	# maybe make copies? or leave that to the calling function?
-	if n_cpu > 1:
-		return calc_roc_mpp(Z_fc, Z_ev, n_cpu=n_cpu, f_denom=f_denom, h_denom=h_denom)
-	#
-	#
-	f_denom = float(f_denom or len(Z_fc))
-	h_denom = float(h_denom or len(Z_ev))
-	#	
-	FH=[[0., 0.]]
-	if do_sort:
-		Z_fc.sort()
-		Z_ev.sort()
-	n_eq=float(len(Z_ev))
-	#n_fc=float(len(Z_fc))
-
-	#
-	k_eq = 0
-	for j,z_fc in enumerate(Z_fc):	
+	# explicitly declare the iterator so we can manipulate it directly:
+	it_fc = enumerate(reversed(sorted(Z_fc)))
+	for k_fc,z_fc in it_fc:
+		
 		#
-		if k_eq<n_eq and z_fc>=Z_ev[k_eq]:
-			while k_eq<n_eq and z_fc>=Z_ev[k_eq]:
-				#
-				#FH += [[j+1,z_fc, k_eq+1, Z_ev[k_eq]]]
-				#
-				#FH += [[(j+1 + j_fc0)/f_denom, (k_eq + j_eq0 +1)/h_denom]]
-				#print('ev: ', k_eq, Z_ev[k_eq], z_fc)
-				k_eq+=1
+		#
+		if k_ev<len(Z_ev) and z_ev>=z_fc:
+			#while k_ev<len(Z_events) and Z_events[k_ev][0]>=z_fc:
+			while k_ev<len(Z_ev) and z_ev>=z_fc:
+				H += n_ev
+				#H+=Z_events[k_ev][1]
+				#k_ev+=1
+				print('** ', z_ev, z_fc, k_ev)
+				#print('advancing events..', k_ev, z_ev)
+				if k_ev==N_ev-1:
+					k_ev+=1
+					break
+				k_ev, (z_ev, n_ev) = it_ev.__next__()
 			#
-			FH += [[(j+1 + j_fc0)/f_denom, (k_eq + j_eq0 )/h_denom]]
-			#FH += [[(f_denom - (j + j_fc0))/f_denom, (k_eq+j_eq0)/h_denom ]]
-		#
-	# and one more at the end, just to square off the curve?:
-	#FH += [[1.,1.]]
+		else:
+			F+=1
+			# looping this way adds extra iterations. can we reorganize to "while" through repeteating F-steps as well?
+			#while z_ev<z_fc:
+			#	F+=1
+			#	if k_fc == N_fc-1:
+			#		k_fc+=1
+			#		break
+			#	k_fc,z_fc = it_fc.__next__()
+
+		
+		FH += [[F,H]]
 	#
-	#return [[0 for _ in FH[0]]] + FH
+	f_denom = (f_denom or max([rw[0] for rw in FH]))
+	h_denom = (h_denom or max([rw[1] for rw in FH]))
+	for rw in FH:
+		rw[0]/=f_denom
+		rw[1]/=h_denom
+	
 	return FH
-'''
+	
+	
+
+
+
 def roc_test_spp1(fignum=1):
 	#
 	# code up an explicit ROC input and output.
