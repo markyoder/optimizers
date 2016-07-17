@@ -87,13 +87,15 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 	
 	#it_ev =enumerate(reversed(sorted([(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev], key=lambda rw: rw[0])))
 	#for rw in it_ev: print(rw)
-	it_ev =enumerate(reversed(sorted([(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev], key=lambda rw: rw[0])))
+	#it_ev =enumerate(reversed(sorted([(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev], key=lambda rw: rw[0])))
+	it_ev =enumerate(reversed(sorted(Z_ev)))
 	
 	N_fc = len(Z_fc)
 	N_ev = len(Z_ev)
 	#
 	k_fc_max = len(Z_fc)
-	k_ev, (z_ev, n_ev) = it_ev.__next__()		# eventually trap for the case with no events.
+	#k_ev, (z_ev, n_ev) = it_ev.__next__()		# eventually trap for the case with no events.
+	k_ev, z_ev = it_ev.__next__()		# eventually trap for the case with no events.
 	
 
 	# explicitly declare the iterator so we can manipulate it directly:
@@ -102,10 +104,11 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 		
 		#
 		#
-		if k_ev<len(Z_ev) and z_ev>=z_fc:
+		if k_ev<N_ev and z_ev>=z_fc:
 			#while k_ev<len(Z_events) and Z_events[k_ev][0]>=z_fc:
 			while k_ev<len(Z_ev) and z_ev>=z_fc:
-				H += n_ev
+				#H += n_ev
+				H += 1
 				#H+=Z_events[k_ev][1]
 				#k_ev+=1
 				#print('** ', z_ev, z_fc, k_ev)
@@ -113,7 +116,8 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 				if k_ev==N_ev-1:
 					k_ev+=1
 					break
-				k_ev, (z_ev, n_ev) = it_ev.__next__()
+				#k_ev, (z_ev, n_ev) = it_ev.__next__()
+				k_ev, z_ev = it_ev.__next__()
 			#
 		else:
 			F+=1
@@ -136,10 +140,12 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 	
 	return FH
 
-def calc_roc_compressed(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1):
+def calc_roc_compressed(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1, do_compressed=True):
 	# A minor variaiton on calc_roc() with compression, aka: we exclude intermediate points in segments.
 	# the loop-exits are probably still a bit sloppy. unfortunately, i don't think there is an elegant way to exit an iterator; you have to either
 	# count rows or trap an exception.
+	#
+	# this almost works, but not quite. i think there is a counting/logic error when the first forecast sites don't predict an event... or something.
 	#
 	# first, force Z_ev to be an array of arrays; if len=1
 	F,H = 0,0
@@ -176,12 +182,20 @@ def calc_roc_compressed(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0
 			else:
 				k_fc+=1
 		else:
-			while k_fc<N_fc and z_ev<z_fc:
+			if do_compressed:
+				while k_fc<N_fc and z_ev<z_fc:
+					F+=1
+					if k_fc == N_fc-1:
+						k_fc+=1
+						break
+					k_fc,z_fc = it_fc.__next__()
+			else:
 				F+=1
 				if k_fc == N_fc-1:
 					k_fc+=1
 					break
 				k_fc,z_fc = it_fc.__next__()
+					
 		FH += [[F,H]]
 	#
 	f_denom = (f_denom or max([rw[0] for rw in FH]))
@@ -194,7 +208,7 @@ def calc_roc_compressed(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0
 #
 # eventually, we'll want to fold this (and other bits) into some sort of ROC class, i think, but for now it's procedural...
 class ROC_data_handler(object):
-	def __init__(self, fc_xyz, events_xyz=None, dx=None, dy=None, fignum=0, do_clf=True, z_event_min=None):
+	def __init__(self, fc_xyz, events_xyz=None, dx=None, dy=None, fignum=0, do_clf=True, z_event_min=None, z_events_as_dicts=False):
 		#
 		# get roc Z_fc, Z_ev from an xyz format forecast and test-catalog object.
 		# for now, assume lattice sites are center-binned.
@@ -236,15 +250,20 @@ class ROC_data_handler(object):
 		#
 		# now, get the event z-values. what we really want is sites with events (and their z-values), so we need to keep track of the bin index of that site
 		# and the number of events in that bin.
-		z_events = {}
-		for x,y,z in events_xyz:
-			if z<z_event_min: continue
-			# is this event in bounds?
-			if x>self.x_max or x<self.x_min or y>self.y_max or y<self.y_min: continue
+		if z_events_as_dicts:
+			z_events = {}
+			for x,y,z in events_xyz:
+				if z<z_event_min: continue
+				# is this event in bounds?
+				if x>self.x_max or x<self.x_min or y>self.y_max or y<self.y_min: continue
+				#
+				fc_index = self.get_site_index(x,y)
+				if not fc_index in z_events.keys(): z_events[fc_index]=[fc_xyz[fc_index][2],0]
+				z_events[fc_index][1] +=1
 			#
-			fc_index = self.get_site_index(x,y)
-			if not fc_index in z_events.keys(): z_events[fc_index]=[fc_xyz[fc_index][2],0]
-			z_events[fc_index][1] +=1
+		else:
+			z_events = [fc_xyz[self.get_site_index(x,y)]['z'] for x,y,z in events_xyz if not (x>self.x_max or x<self.x_min or y>self.y_max or y<self.y_min) and z>=z_event_min]
+		#
 		self.z_events = z_events
 		#
 	def get_site_index(self,x,y):
