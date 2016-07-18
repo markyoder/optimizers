@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+# "xyz" spatialy type csv files
+# note, however, that we might want to explicitly include some of these from time to time
+*.xyz
+
 # Distribution / packaging
 .Python
 env/
