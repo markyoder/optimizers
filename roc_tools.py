@@ -23,6 +23,7 @@ import matplotlib as mpl
 import time
 import multiprocessing as mpp
 import numba
+import itertools
 #
 # for unit testing:
 default_roc_sample = {'F': [17,17,16,15,14,13,12,11,10,9,8,8,7,6,5,4,4,3,3,2,1,1,0,0,0], 'H':[8,7,7,7,7,7,7,7,7,7,7,6,6,6,6,6,5,5,4,4,4,3,3,2,1], 'Z_fc':list(range(10,35)), 'Z_ev':[10., 20., 25, 27, 30, 32, 33, 34]}
@@ -170,8 +171,40 @@ def calc_roc_compressed(Z_fc, Z_ev, f_denom=None, h_denom=None, do_sort=True,  d
 	
 	return FH
 #
+def calc_molchan_sum(Z_fc, Z_ev, f_denom=None, h_denom=None):
+    # a simplified, but slower, version of molchan. this can be used for verification of the single-pass
+    # approach
+    f_denom = float(f_denom or len(Z_fc))
+    h_denom = float(h_denom or len(Z_ev))
+    #
+    # first a simple, but costly approach:
+    return [[k_fc/f_denom, sum([z_ev>=z_fc for z_ev in Z_ev])/h_denom] for k_fc, z_fc in enumerate(reversed(sorted(Z_fc)))]
+    
+def calc_molchan(Z_fc, Z_ev, f_denom=None, h_denom=None):
+	# Molchan: like ROC, but simpler and perhaps more appropriate for spatial forecasts.
+	# Molchan = percent_forecast vs percent_map_covered (percent z_events_total vs percent z_map<z_events[j]).
+	#
+    f_denom = float(f_denom or len(Z_fc))
+    h_denom = float(h_denom or len(Z_ev))
+    #
+    
+    FH = [[0.,0.]]
+    it_ev = enumerate(reversed(sorted(Z_ev)))
+    #
+    k_ev,z_ev = it_ev.__next__()
+    for k_fc, z_fc in enumerate(reversed(sorted(Z_fc))):
+        while z_ev>=z_fc and k_ev<h_denom:
+            if k_ev>=h_denom-1:
+                k_ev+=1
+                break
+            else:
+                k_ev, z_ev = it_ev.__next__()
+        #
+        FH += [[k_fc/f_denom, k_ev/h_denom]]
+    #
+    return FH
 # eventually, we'll want to fold this (and other bits) into some sort of ROC class, i think, but for now it's procedural...
-class ROC_data_handler(object):
+class ROC_xyz_handler(object):
 	def __init__(self, fc_xyz, events_xyz=None, dx=None, dy=None, fignum=0, do_clf=True, z_event_min=None, z_events_as_dicts=False):
 		#
 		# get roc Z_fc, Z_ev from an xyz format forecast and test-catalog object.
@@ -228,8 +261,8 @@ class ROC_data_handler(object):
 		else:
 			z_events = [fc_xyz[self.get_site_index(x,y)]['z'] for x,y,z in events_xyz if not (x>self.x_max or x<self.x_min or y>self.y_max or y<self.y_min) and z>=z_event_min]
 		#
-		self.z_events = reversed(sorted(z_events))
-		self.z_fc = reversed(sorted(fc_xyz['z']))
+		self.z_events = list(reversed(sorted(z_events)))
+		self.z_fc = list(reversed(sorted(fc_xyz['z'])))
 		#
 	def get_site_index(self,x,y):
 		#return int(round((x-self.x_range[0]+.5*self.d_x)/self.d_x)) + int(round((y-self.y_range[0]+.5*self.d_y)/self.d_y))*self.nx
@@ -243,6 +276,19 @@ class ROC_data_handler(object):
 		z_ev = self.Z_events_dict_to_list(self.z_events)
 		#
 		return calc_roc(Z_fc=self.z_fc, Z_ev=self.z_events, f_denom=None, h_denom=None)
+	#
+	def calc_molchan(self):
+		# we'll need to know if z_events is in a list or dict format. for the time being, i think we're not going to support the dict model
+		# ( Z_ev = {j:[z,n] ,...] ) that we developed earlier. memory can be premium for global forcasts, so for now, if we have a dict, expand it.
+		# ... or just save both formats for now...
+		z_ev = self.Z_events_dict_to_list(self.z_events)
+		#
+		return calc_molchan(Z_fc=self.z_fc, Z_ev=self.z_events, f_denom=None, h_denom=None)	
+	#
+	def calc_molchan_sum(self):
+		z_ev = self.Z_events_dict_to_list(self.z_events)
+		#
+		return calc_molchan_sum(Z_fc=self.z_fc, Z_ev=self.z_events, f_denom=None, h_denom=None)	
 		
 	def Z_events_dict_to_list(self, z_dict=None):
 		if z_dict is None: z_dict=self.z_events
@@ -256,7 +302,7 @@ class ROC_data_handler(object):
 			#
 		#
 		z_out.sort()
-		return return z_out
+		return z_out
 	#
 	# some convenience functions
 	@property
@@ -350,6 +396,34 @@ def roc_test(fignum=1, n_cpu=None):
 		#
 	#
 	return FH
+
+def roc_xyz_test():
+	#Zs_fc = numpy.arange(100)
+	#Zs_fc.shape=((10,10))
+	fc_xyz = [[x,y,z] for z,(x,y) in enumerate(itertools.product(range(10), range(10)))]
+	m=5.
+	ev_xyz = [[5,5,m], [6,4,m], [9,7,m], [2,8,m], [5,8,m], [9,8,m], [3,9,m], [7,9,m]]
+	#
+	ROC_handler = ROC_xyz_handler(fc_xyz, ev_xyz)
+
+	print(ROC_handler.z_events)
+
+	plt.figure()
+	plt.plot(*zip(*ROC_handler.calc_roc()), ls='-', marker='.')
+	plt.plot(*zip(*ROC_handler.calc_molchan()), ls='-', marker='.')
+	plt.plot(*zip(*ROC_handler.calc_molchan_sum()), ls='-', marker='.')
+	plt.plot(range(2), range(2), color='r', ls='--', lw=2.)
+
+	#print(ROC_handler.calc_molchan())
+	#plt.figure()
+	#plt.clf()
+	#plt.plot(*zip(*ROC_handler.calc_molchan()), ls='-', marker='.')
+	#
+	plt.figure()
+	plt.clf()
+	ax1=plt.gca()
+	ax1.imshow(numpy.reshape(ROC_handler.fc_xyz['z'],(10,10)), interpolation='nearest')
+	ax1.scatter(ROC_handler.events_xyz['x'], ROC_handler.events_xyz['y'], marker='o')
 
 def roc_test_fig(N_ev=1000, N_fc=10000, fignum=0, do_clf=True, n_cpu=1):
 	N_ev=int(N_ev)
