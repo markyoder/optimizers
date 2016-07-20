@@ -27,46 +27,8 @@ import numba
 # for unit testing:
 default_roc_sample = {'F': [17,17,16,15,14,13,12,11,10,9,8,8,7,6,5,4,4,3,3,2,1,1,0,0,0], 'H':[8,7,7,7,7,7,7,7,7,7,7,6,6,6,6,6,5,5,4,4,4,3,3,2,1], 'Z_fc':list(range(10,35)), 'Z_ev':[10., 20., 25, 27, 30, 32, 33, 34]}
 
-#
-def calc_roc_mpp(Z_fc, Z_ev, n_cpu=None, f_denom=None, h_denom=None):
-	# mpp handler for roc.
-	# TODO: ok, so this looks like it's working, but a more quantitative test with larget data sets is in order. first, do a point-by-point on the spp roc; then bench mpp vs spp
-	# on a large array... also, add a "stepify" function, so spp and mpp curves can be explicitly compared... or write a script to parse out redundant elements (if x[0][0]==x[1][0]
-	# or x[0][1]==x[1][1], remove the later one). we get these elements because one sub-process will find the "hit" at a different z_fc than another process.
-	#
-	n_cpu = (n_cpu or mpp.cpu_count())
-	#
-	# there should probably be recipricol "if" hadling in calc_roc() (aka, allow an n_cpu input which diverts here).
-	if n_cpu==1:
-		return calc_roc(Z_fc, Z_ev, f_denom=f_denom, h_denom=h_denom)
-	#
-	f_denom = float(f_denom or len(Z_fc))
-	h_denom = float(h_denom or len(Z_ev))
-	#
-	# pass all of Z_ev and part of Z_fc to each process. Z_fc can either be parsed by sequential chunks or sampled:
-	# X[0:n], X[n:2n], ... or X[0:N:n_cpu], X[1:N:N_cpu],... it shouldn't matter either way, but we have to keep track of their
-	# starting indices properly.
-	#
-	P = mpp.Pool(n_cpu)
-	p_len = int(numpy.ceil(len(Z_fc)/n_cpu))
-	#
-	Z_fc.sort()
-	Z_ev.sort()
-	#
-	workers = [P.apply_async(calc_roc, args=(Z_fc[j*p_len:(j+1)*p_len], Z_ev), kwds={'f_denom':f_denom, 'h_denom':h_denom, 'j_fc0':j*p_len, 'j_eq0':0, 'do_sort':False}) for j in range(n_cpu)]
-	#	
-	P.close()
-	P.join()
-	#
-	roc_segments = [worker.get() for worker in workers]
-	#roc_segments = [print('work...') for worker in workers]
-	#
-	roc = [rw for roc_segment in roc_segments for rw in roc_segment]
-	roc.sort(key = lambda rw: rw[0])
-	
-	return roc
 
-def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1):
+def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None):
 	# (we should figure out how to compile these with numba)l.\
 	#
 	# let's take an iterative approach, and also accomodate cases where multiple events occur in a single bin... sometimes.
@@ -84,7 +46,9 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 	F,H = 0,0
 	FH = [[F,H]]
 	# we can do this more efficiently with an iterator...
-	
+	#
+	# eventually, we might reinstate this model, but i think that we don't need it if we're stepping through the list(s) from the top down.
+	#
 	#it_ev =enumerate(reversed(sorted([(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev], key=lambda rw: rw[0])))
 	#for rw in it_ev: print(rw)
 	#it_ev =enumerate(reversed(sorted([(numpy.append(numpy.atleast_1d(x), [1]))[0:2] for x in Z_ev], key=lambda rw: rw[0])))
@@ -140,7 +104,7 @@ def calc_roc(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=T
 	
 	return FH
 
-def calc_roc_compressed(Z_fc, Z_ev, f_denom=None, h_denom=None, j_fc0=0, j_eq0=0, do_sort=True, n_cpu=1, do_compressed=True):
+def calc_roc_compressed(Z_fc, Z_ev, f_denom=None, h_denom=None, do_sort=True,  do_compressed=True):
 	# A minor variaiton on calc_roc() with compression, aka: we exclude intermediate points in segments.
 	# the loop-exits are probably still a bit sloppy. unfortunately, i don't think there is an elegant way to exit an iterator; you have to either
 	# count rows or trap an exception.
@@ -270,6 +234,18 @@ class ROC_data_handler(object):
 		#return int(round((x-self.x_range[0]+.5*self.d_x)/self.d_x)) + int(round((y-self.y_range[0]+.5*self.d_y)/self.d_y))*self.nx
 		#print('*** ', x, y, int((x-self.x_range[0]+.5*self.d_x)/self.d_x) + int((y-self.y_range[0]+.5*self.d_y)/self.d_y)*int(self.nx))
 		return int((x-self.x_range[0]+.5*self.d_x)/self.d_x) + int((y-self.y_range[0]+.5*self.d_y)/self.d_y)*int(self.nx)
+	#
+	def calc_roc(self):
+		# we'll need to know if z_events is in a list or dict format. for the time being, i think we're not going to support the dict model
+		# ( Z_ev = {j:[z,n] ,...] ) that we developed earlier. memory can be premium for global forcasts, so for now, if we have a dict, expand it.
+		# ... or just save both formats for now...
+		pass
+		
+	def Z_events_dict_to_list(self, z_dict=None):
+		if z_dict is None: z_dict=self.z_events
+		#
+		# convert {j:[z,n], ...} --> [z, ...]
+		return None
 	#
 	# some convenience functions
 	@property
