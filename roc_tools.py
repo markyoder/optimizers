@@ -228,7 +228,8 @@ class ROC_data_handler(object):
 		else:
 			z_events = [fc_xyz[self.get_site_index(x,y)]['z'] for x,y,z in events_xyz if not (x>self.x_max or x<self.x_min or y>self.y_max or y<self.y_min) and z>=z_event_min]
 		#
-		self.z_events = z_events
+		self.z_events = reversed(sorted(z_events))
+		self.z_fc = reversed(sorted(fc_xyz['z']))
 		#
 	def get_site_index(self,x,y):
 		#return int(round((x-self.x_range[0]+.5*self.d_x)/self.d_x)) + int(round((y-self.y_range[0]+.5*self.d_y)/self.d_y))*self.nx
@@ -239,13 +240,23 @@ class ROC_data_handler(object):
 		# we'll need to know if z_events is in a list or dict format. for the time being, i think we're not going to support the dict model
 		# ( Z_ev = {j:[z,n] ,...] ) that we developed earlier. memory can be premium for global forcasts, so for now, if we have a dict, expand it.
 		# ... or just save both formats for now...
-		pass
+		z_ev = self.Z_events_dict_to_list(self.z_events)
+		#
+		return calc_roc(Z_fc=self.z_fc, Z_ev=self.z_events, f_denom=None, h_denom=None)
 		
 	def Z_events_dict_to_list(self, z_dict=None):
 		if z_dict is None: z_dict=self.z_events
+		if not isinstance(z_dict,dict): return z_dict
 		#
 		# convert {j:[z,n], ...} --> [z, ...]
-		return None
+		z_out = []
+		for key,(x,n) in z_dict.items():
+			for j in range(n):
+				z_out += [x]
+			#
+		#
+		z_out.sort()
+		return return z_out
 	#
 	# some convenience functions
 	@property
