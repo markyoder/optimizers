@@ -205,7 +205,7 @@ def calc_molchan(Z_fc, Z_ev, f_denom=None, h_denom=None):
     return FH
 # eventually, we'll want to fold this (and other bits) into some sort of ROC class, i think, but for now it's procedural...
 class ROC_xyz_handler(object):
-	def __init__(self, fc_xyz, events_xyz=None, dx=None, dy=None, fignum=0, do_clf=True, z_event_min=None, z_events_as_dicts=False):
+	def __init__(self, fc_xyz=None, events_xyz=None, dx=None, dy=None, fignum=0, do_clf=True, z_event_min=None, z_events_as_dicts=False):
 		#
 		# get roc Z_fc, Z_ev from an xyz format forecast and test-catalog object.
 		# for now, assume lattice sites are center-binned.
