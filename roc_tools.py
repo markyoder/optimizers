@@ -172,37 +172,37 @@ def calc_roc_compressed(Z_fc, Z_ev, f_denom=None, h_denom=None, do_sort=True,  d
 	return FH
 #
 def calc_molchan_sum(Z_fc, Z_ev, f_denom=None, h_denom=None):
-    # a simplified, but slower, version of molchan. this can be used for verification of the single-pass
-    # approach
-    f_denom = float(f_denom or len(Z_fc))
-    h_denom = float(h_denom or len(Z_ev))
-    #
-    # first a simple, but costly approach:
-    return [[k_fc/f_denom, sum([z_ev>=z_fc for z_ev in Z_ev])/h_denom] for k_fc, z_fc in enumerate(reversed(sorted(Z_fc)))]
-    
+	# a simplified, but slower, version of molchan. this can be used for verification of the single-pass
+	# approach
+	f_denom = float(f_denom or len(Z_fc))
+	h_denom = float(h_denom or len(Z_ev))
+	#
+	# first a simple, but costly approach:
+	return [[k_fc/f_denom, sum([z_ev>=z_fc for z_ev in Z_ev])/h_denom] for k_fc, z_fc in enumerate(reversed(sorted(Z_fc)))]
+	
 def calc_molchan(Z_fc, Z_ev, f_denom=None, h_denom=None):
 	# Molchan: like ROC, but simpler and perhaps more appropriate for spatial forecasts.
 	# Molchan = percent_forecast vs percent_map_covered (percent z_events_total vs percent z_map<z_events[j]).
 	#
-    f_denom = float(f_denom or len(Z_fc))
-    h_denom = float(h_denom or len(Z_ev))
-    #
-    
-    FH = [[0.,0.]]
-    it_ev = enumerate(reversed(sorted(Z_ev)))
-    #
-    k_ev,z_ev = it_ev.__next__()
-    for k_fc, z_fc in enumerate(reversed(sorted(Z_fc))):
-        while z_ev>=z_fc and k_ev<h_denom:
-            if k_ev>=h_denom-1:
-                k_ev+=1
-                break
-            else:
-                k_ev, z_ev = it_ev.__next__()
-        #
-        FH += [[k_fc/f_denom, k_ev/h_denom]]
-    #
-    return FH
+	f_denom = float(f_denom or len(Z_fc))
+	h_denom = float(h_denom or len(Z_ev))
+	#
+	
+	FH = [[0.,0.]]
+	it_ev = enumerate(reversed(sorted(Z_ev)))
+	#
+	k_ev,z_ev = it_ev.__next__()
+	for k_fc, z_fc in enumerate(reversed(sorted(Z_fc))):
+		while z_ev>=z_fc and k_ev<h_denom:
+			if k_ev>=h_denom-1:
+				k_ev+=1
+				break
+			else:
+				k_ev, z_ev = it_ev.__next__()
+		#
+		FH += [[k_fc/f_denom, k_ev/h_denom]]
+	#
+	return FH
 # eventually, we'll want to fold this (and other bits) into some sort of ROC class, i think, but for now it's procedural...
 class ROC_xyz_handler(object):
 	def __init__(self, fc_xyz=None, events_xyz=None, dx=None, dy=None, fignum=0, do_clf=True, z_event_min=None, z_events_as_dicts=False):
@@ -474,6 +474,59 @@ def roc_bench(N=1e5):
 		FH = calc_roc_mpp(Z_fc, Z_ev)
 	#
 	print('dt: ', time.time()-t0)
+#
+def array_dim(X):
+	'''
+	# get depth of array (dimension). assumes uniform structure.
+	'''
+	k=0
+	x=X
+	while not (isinstance(x,float) or isinstance(x,int) or isinstance(x,str)):
+		k+=1
+		x=x[0]
+	return k
+#
+def integrate_fh(FH, skill=True, n_cpu=1):
+	# basically, rectangular numerical integration, subtract off H-F if skill=True
+	# eventually, add functionality to recognize metadata, aka
+	# [[a,b,c, [FH]], [a,b,c,[FH]], ...]
+	# but fundamentally, this is only compatible with D=2 and D=3 arrays.
+	#
+	f_factor=skill%2	# integrate skill score (h-f) or h score
+	#
+	# if there is only a single array input, only use 1 processor.
+	#if array_dim(FH)<=2: n_cpu=1
+	if array_dim(FH)<1:
+		return None
+	if array_dim(FH)==1:
+		FH = [[j,x] for j,x in enumerate(FH)]
+	if array_dim(FH)==2:
+		FH = [FH]
+	#
+	#
+	# do simple block integration; err on the side of a higher score.
+	if n_cpu==1:
+		# is this a list of inputs or a single input?
+		return_array = []
+		for fh in FH:
+			#fh=FH
+			while array_dim(fh)>2: fh=fh[-1]
+			return_array += [numpy.sum([(h-f_factor*f)*(f-fh[j][0]) for j, (f,h) in enumerate(fh[1:])])]
+			#return numpy.sum([(h-f_factor*f)*(f-fh[j][0]) for j, (f,h) in enumerate(fh[1:])])
+		return return_array
+		#
+	else:
+		# now, set up the mpp bits.
+		#return integrate_fh(FH, skill=skill, n_cpu=1)
+		P = mpp.Pool(mpp.cpu_count())
+		results = []
+		outputs= []
+		for rw in FH:
+			# note: with apply_async we can also use kwds={}.
+			results += [P.apply_async(integrate_fh, args=(rw, skill,1))]
+		P.close()
+		P.join()
+		return [rw.get() for rw in results]
 
 if __name__=='__main__':
 	pass
